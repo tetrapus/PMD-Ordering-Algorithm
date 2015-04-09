@@ -1,0 +1,53 @@
+Approach
+Positive matrix decomposition produces two matrices which multiply to an approximation of the original matrix. We can conceptualise these matrices as a set of characteristic features associated with each user, and thus we can consider each value assigned by the algorithm a score for some arbitrary "feature" identified by the algorithm. We can thus view PMD as a clustering algorithm, which clusters users by identifying the distance from each user to some abstract "feature".
+Finding the most informative unknown to evaluate is then simply a matter of investigating the most characteristic unevaluated user of the most "likely" cluster at any given time. We can use bayesian reasoning to determine the most likely cluster that a user will have the highest affinity, and the most likely user is simply given by the highest un-evaluated activation of the selected feature.
+
+Algorithm
+Suppose some user u \in U rates n <= N other users. We can calculate the most likely cluster by picking the maximum value in the vector \sum R[u, i]*v_i.
+
+Evaluation
+To test the efficacy of the approach, we can test:
+- The number of steps taken to find the best match
+- The edit distance from the best ranking at given intervals
+Varying the following conditions
+- Partiality (# of unevaluated components)
+- Changing entries
+- Adding new users
+- Dimensionality of the "feature vectors"
+Compared with the benchmarks:
+- Random evaluation order
+- Evaluate least informative (pick sparsest column, then pick sparsest row of all unevaluated rows)
+- Evaluate the unevaluated user with the closest feature vector
+
+import scipy.sparse as sp
+import nimfa
+
+def load_matrix(users, ratings):
+    matrix = sp.dok_matrix((len(users), len(users)))
+    for k, v in ratings.items():
+        matrix[users[k[0]], users[k[1]]] = v
+        matrix[users[k[1]], users[k[0]]] = v
+    return v
+
+def clustered_select(ratings, users, rank=10):
+    matrix = sp.dok_matrix((len(users), len(users)))
+    for k, v in ratings.items():
+        matrix[users[k[0]], users[k[1]]] = v
+        matrix[users[k[1]], users[k[0]]] = v
+    # Run sparse matrix factorisation
+    factor = nimfa.mf(matrix, seed="random_c", rank=rank, method="snmf", max_iter=12, initialize_only=True, version='r', eta=1., beta=1e-4, i_conv=10, w_min_change=0)
+    result = nimfa.mf_run(factor)
+    if len(ratings) >= len(users)**2:
+        return # all items expanded
+    # Pick a user to expand
+    user = min(users, key=lambda u: len([i for i in u if i in u]))
+    # Pick a cluster
+    clusters = result.basis()
+    # Select all rated users
+    user_rated = {i[0]: ratings[i] for i in ratings if user == i[1]}
+    user_rated.update({i[1]: ratings[i] for i in ratings if user == i[0]})
+    cluster = max(range(rank), key=lambda x: sum(r * clusters[users[u], x]) for u, r in user_rated.items()))
+    # Find the user with the highest affinity to cluster
+    candidates = {i for i in users if i not in user_rated}
+    candidate = max(candidates, lambda x: clusters[x, cluster])
+    return candidate
